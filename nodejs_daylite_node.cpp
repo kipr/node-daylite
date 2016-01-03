@@ -209,11 +209,6 @@ void NodeJSDayliteNode::spinner_after(uv_work_t *request, int status)
 
 void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
 {
-    ofstream myfile;
-    myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-    myfile << "Handle Package before scope\n";
-    myfile.close();
-    
     Isolate *isolate = Isolate::GetCurrent();
     HandleScope scope(isolate);
     
@@ -231,15 +226,7 @@ void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
             // call the JavaScript callback
             if(!obj->_js_subscriber_callback.IsEmpty())
             {
-                myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-                myfile << "Creating Callback\n";
-                myfile.close();
-                
                 auto fn = Local<Function>::New(isolate, obj->_js_subscriber_callback);
-                
-                myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-                myfile << "Calling Callback\n";
-                myfile.close();
                 
                 auto image_data = node::Buffer::New(msg.data.size());
                 copy(msg.data.begin(), msg.data.end(), node::Buffer::Data(image_data));
@@ -255,19 +242,10 @@ void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
             }
         }
     }
-    
-    myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-    myfile << "Handle Package after scope\n";
-    myfile.close();
 }
 
 void NodeJSDayliteNode::daylite_subscriber_callback(const bson_t *raw_msg, void *arg)
 {
-    ofstream myfile;
-    myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-    myfile << "Got Frame\n";
-    myfile.close();
-    
     NodeJSDayliteNode* obj = static_cast<NodeJSDayliteNode *>(arg);
     
     // unwrap the message
@@ -275,27 +253,15 @@ void NodeJSDayliteNode::daylite_subscriber_callback(const bson_t *raw_msg, void 
 
     if(msg_option.some())
     {
-        myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-        myfile << "Enqueue it\n";
-        myfile.close();
-        
         // enqueue it
         {
             std::lock_guard<std::mutex> lock(obj->_sub_msg_queue_mutex);
             obj->_sub_msg_queue.push(msg_option.unwrap());
         }
         
-        myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-        myfile << "Notifying\n";
-        myfile.close();
-        
         // notify the Node.js event loop that there is work to do
         uv_async_send(&obj->_sub_async);
     }
-    
-    myfile.open ("C:\\Users\\stefa_000\\Desktop\\example.txt", ios::out | ios::app);
-    myfile << "scheduled async\n";
-    myfile.close();
 }
 
 void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
