@@ -1,0 +1,25 @@
+{
+  "name": "node-daylite",
+  "version": "0.0.1",
+  "description": "",
+  "main": "node-daylite.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "install": "node-gyp rebuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kipr/node-daylite.git"
+  },
+  "author": "Stefan Zeltner",
+  "license": "GPLv3",
+  "gypfile": true,
+  "bugs": {
+    "url": "https://github.com/kipr/node-daylite/issues"
+  },
+  "homepage": "https://github.com/kipr/node-daylite",
+  "dependencies": {
+    "bindings": "^1.2.1",
+    "bson": "^0.4.20"
+  }
+}
