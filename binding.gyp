@@ -10,8 +10,8 @@
         [ 'OS=="linux"', {
             'cflags': [ '-std=c++11', '-fexceptions' ],
             'library_dirs': [
-              '/usr/lib',
-              '/usr/local/lib'
+              '<!(echo $SYSROOT)/usr/lib',
+              '<!(echo $SYSROOT)/usr/local/lib'
             ],
             'include_dirs': [ '<!(echo $SYSROOT)/usr/include/libbson-1.0' ],
             'link_settings': {
