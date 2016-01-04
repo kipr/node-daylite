@@ -228,7 +228,7 @@ void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
             {
                 auto fn = Local<Function>::New(isolate, obj->_js_subscriber_callback);
                 
-                auto image_data = node::Buffer::New(isolate, msg.data.size());
+                auto image_data = node::Buffer::New(isolate, msg.data.size()).ToLocalChecked();
                 copy(msg.data.begin(), msg.data.end(), node::Buffer::Data(image_data));
                 
                 const unsigned argc = 4;
