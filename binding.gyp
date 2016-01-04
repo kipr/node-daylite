@@ -7,6 +7,19 @@
         'nodejs_daylite_node.cpp'
       ],
       "conditions": [
+        [ 'OS=="linux"', {
+            'cflags': [ '-std=c++11', '-stdlib=libc++' ],
+            'library_dirs': [
+              '/usr/lib',
+              '/usr/local/lib'
+            ],
+            'link_settings': {
+              'libraries': [
+                '-ldaylite',
+                '-lbson-1.0'
+              ]
+            }
+        }],
         [ 'OS=="mac"', {
             'xcode_settings': {
               'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',
