@@ -11,7 +11,7 @@
 
 #include <daylite/node.hpp>
 
-#include <aurora_frame.hpp>
+#include <aurora/aurora_frame.hpp>
 
 namespace nodejs_daylite_node
 {

@@ -8,11 +8,12 @@
       ],
       "conditions": [
         [ 'OS=="linux"', {
-            'cflags': [ '-std=c++11', '-stdlib=libc++' ],
+            'cflags': [ '-std=c++11' ],
             'library_dirs': [
               '/usr/lib',
               '/usr/local/lib'
             ],
+            'include_dirs': [ '<!(echo $SYSROOT)/usr/include/libbson-1.0' ],
             'link_settings': {
               'libraries': [
                 '-ldaylite',

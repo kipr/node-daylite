@@ -5,8 +5,8 @@
 
 #include "nodejs_daylite_node.hpp"
 
-#include <aurora_key.hpp>
-#include <aurora_mouse.hpp>
+#include <aurora/aurora_key.hpp>
+#include <aurora/aurora_mouse.hpp>
 
 #include <iostream>
 #include <fstream>
