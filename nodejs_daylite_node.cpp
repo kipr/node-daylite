@@ -25,15 +25,8 @@ namespace
     {
         using namespace bson_bind;
         T ret;
-        try
-        {
-            ret = T::unbind(raw_msg);
-        }
-        catch(const invalid_argument &e)
-        {
-            return none<T>();
-        }
-
+        // Exception checks are disabled on ARM Node/V8
+        ret = T::unbind(raw_msg);
         return some(ret);
     }
 }
