@@ -301,24 +301,133 @@ void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
 
 void NodeJSDayliteNode::publish_aurora_key(const FunctionCallbackInfo<Value> &args)
 {
-  Isolate* isolate = Isolate::GetCurrent();
-  HandleScope scope(isolate);
+    Isolate* isolate = Isolate::GetCurrent();
+    HandleScope scope(isolate);
+  
+    if(args.Length() != 1)
+    {
+        isolate->ThrowException(Exception::TypeError(
+            String::NewFromUtf8(isolate, "Wrong number of arguments")));
+        return;
+    }
 
-  NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
-  //success = n->start("127.0.0.1", 8374);
-
-  //args.GetReturnValue().Set(Boolean::New(isolate, success));
+    if(!args[0]->IsArray())
+    {
+        isolate->ThrowException(Exception::TypeError(
+            String::NewFromUtf8(isolate, "Wrong arguments")));
+        return;
+    }
+    auto msg_obj = Handle<Object>::Cast(args[0]);
+    
+    aurora_key daylite_msg;
+    
+    if(msg_obj->Has(String::NewFromUtf8(isolate, "key_pressed")))
+    {
+        auto key_pressed_obj = msg_obj->Get(String::NewFromUtf8(isolate, "key_pressed"));
+        if(!key_pressed_obj->IsArray())
+        {
+            isolate->ThrowException(Exception::TypeError(
+                String::NewFromUtf8(isolate, "Wrong arguments")));
+            return;
+        }
+        
+        auto key_pressed = Local<Array>::Cast(key_pressed_obj);
+        for (auto i = 0; i < key_pressed->Length(); ++i)
+        {
+            auto key_code = Local<Number>::Cast(key_pressed->Get(i));
+            daylite_msg.key_pressed.push_back(key_code->NumberValue());
+        }
+    }
+    
+    NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
+    obj->_aurora_key_pub->publish(daylite_msg.bind());
+    
+    args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 
 void NodeJSDayliteNode::publish_aurora_mouse(const FunctionCallbackInfo<Value> &args)
 {
-  Isolate* isolate = Isolate::GetCurrent();
-  HandleScope scope(isolate);
+    Isolate* isolate = Isolate::GetCurrent();
+    HandleScope scope(isolate);
+  
+    if(args.Length() != 1)
+    {
+        isolate->ThrowException(Exception::TypeError(
+            String::NewFromUtf8(isolate, "Wrong number of arguments")));
+        return;
+    }
 
-  NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
-  //success = n->start("127.0.0.1", 8374);
-
-  //args.GetReturnValue().Set(Boolean::New(isolate, success));
+    if(!args[0]->IsObject())
+    {
+        isolate->ThrowException(Exception::TypeError(
+            String::NewFromUtf8(isolate, "Wrong arguments")));
+        return;
+    }
+    auto msg_obj = Handle<Object>::Cast(args[0]);
+    
+    aurora_mouse daylite_msg;
+    
+    if(msg_obj->Has(String::NewFromUtf8(isolate, "pos_x")))
+    {
+        auto pos_x = msg_obj->Get(String::NewFromUtf8(isolate, "pos_x"));
+        if(!pos_x->IsNumber())
+        {
+            isolate->ThrowException(Exception::TypeError(
+                String::NewFromUtf8(isolate, "Wrong arguments")));
+            return;
+        }
+        daylite_msg.pos_x = pos_x->NumberValue();
+    }
+    if(msg_obj->Has(String::NewFromUtf8(isolate, "pos_y")))
+    {
+        auto pos_y = msg_obj->Get(String::NewFromUtf8(isolate, "pos_y"));
+        if(!pos_y->IsNumber())
+        {
+            isolate->ThrowException(Exception::TypeError(
+                String::NewFromUtf8(isolate, "Wrong arguments")));
+            return;
+        }
+        daylite_msg.pos_y = pos_y->NumberValue();
+    }
+    
+    if(msg_obj->Has(String::NewFromUtf8(isolate, "left_button_down")))
+    {
+        auto left_button_down = msg_obj->Get(String::NewFromUtf8(isolate, "left_button_down"));
+        if(!left_button_down->IsBoolean())
+        {
+            isolate->ThrowException(Exception::TypeError(
+                String::NewFromUtf8(isolate, "Wrong arguments")));
+            return;
+        }
+        daylite_msg.left_button_down = left_button_down->BooleanValue();
+    }
+    if(msg_obj->Has(String::NewFromUtf8(isolate, "middle_button_down")))
+    {
+        auto middle_button_down = msg_obj->Get(String::NewFromUtf8(isolate, "middle_button_down"));
+        if(!middle_button_down->IsBoolean())
+        {
+            isolate->ThrowException(Exception::TypeError(
+                String::NewFromUtf8(isolate, "Wrong arguments")));
+            return;
+        }
+        daylite_msg.middle_button_down = middle_button_down->BooleanValue();
+    }
+    if(msg_obj->Has(String::NewFromUtf8(isolate, "right_button_down")))
+    {
+        auto right_button_down = msg_obj->Get(String::NewFromUtf8(isolate, "right_button_down"));
+        if(!right_button_down->IsBoolean())
+        {
+            isolate->ThrowException(Exception::TypeError(
+                String::NewFromUtf8(isolate, "Wrong arguments")));
+            return;
+        }
+        daylite_msg.right_button_down = right_button_down->BooleanValue();
+    }
+    
+    NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
+    obj->_aurora_mouse_pub->publish(daylite_msg.bind());
+    
+    args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 
 }
