@@ -8,7 +8,7 @@
       ],
       "conditions": [
         [ 'OS=="linux"', {
-            'cflags': [ '-std=c++11', '-stdlib=libc++' ],
+            'cflags': [ '-std=c++11' ],
             'library_dirs': [
               '/usr/lib',
               '/usr/local/lib'
