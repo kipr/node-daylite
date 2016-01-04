@@ -1,6 +1,6 @@
 {
   "name": "node-daylite",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "",
   "main": "node-daylite.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "url": "https://github.com/kipr/node-daylite.git"
   },
   "author": "Stefan Zeltner",
-  "license": "GPLv3",
+  "license": "GPL-3.0",
   "gypfile": true,
   "bugs": {
     "url": "https://github.com/kipr/node-daylite/issues"
