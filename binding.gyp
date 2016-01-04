@@ -13,7 +13,7 @@
               '/usr/lib',
               '/usr/local/lib'
             ],
-            'include_dirs': [ '/usr/include/libbson-1.0' ],
+            'include_dirs': [ '<!(echo $SYSROOT)/usr/include/libbson-1.0' ],
             'link_settings': {
               'libraries': [
                 '-ldaylite',
