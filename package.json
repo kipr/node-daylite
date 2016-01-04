@@ -1,6 +1,6 @@
 {
   "name": "node-daylite",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "",
   "main": "node-daylite.js",
   "scripts": {
