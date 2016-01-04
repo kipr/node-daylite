@@ -192,7 +192,7 @@ void NodeJSDayliteNode::spinner_work(uv_work_t *request)
     daylite::spinner::spin_once();
     
     // sleep a bit after worker
-    Sleep(50);
+    usleep(1000);
 }
 
 // called after spinner_worker_run finishes
