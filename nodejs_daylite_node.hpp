@@ -56,6 +56,7 @@ class NodeJSDayliteNode : public node::ObjectWrap
         static void publish(const v8::FunctionCallbackInfo<v8::Value> &args);
         static void subscribe(const v8::FunctionCallbackInfo<v8::Value> &args);
         v8::Local<v8::Object> process_bson(const daylite::bson &msg) const;
+        daylite::bson process_obj(const v8::Local<v8::Object> &obj) const;
         v8::Persistent<v8::Function> _js_callback;
         
         std::unordered_map<std::string, std::shared_ptr<daylite::publisher> > _publishers;

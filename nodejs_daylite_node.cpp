@@ -12,7 +12,6 @@ namespace nodejs_daylite_node
 
 using namespace v8;
 using namespace std;
-using namespace daylite;
 
 void NodeJSDayliteNode::Init(Handle<Object> exports)
 {
@@ -28,8 +27,7 @@ void NodeJSDayliteNode::Init(Handle<Object> exports)
     NODE_SET_PROTOTYPE_METHOD(tpl, "start", start);
     NODE_SET_PROTOTYPE_METHOD(tpl, "stop", stop);
     
-    NODE_SET_PROTOTYPE_METHOD(tpl, "publish_aurora_key", publish_aurora_key);
-    NODE_SET_PROTOTYPE_METHOD(tpl, "publish_aurora_mouse", publish_aurora_mouse);
+    NODE_SET_PROTOTYPE_METHOD(tpl, "publish", publish);
     NODE_SET_PROTOTYPE_METHOD(tpl, "subscribe", subscribe);
 
     constructor.Reset(isolate, tpl->GetFunction());
@@ -188,55 +186,62 @@ void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
             auto msg = obj->_sub_msg_queue.front();
             obj->_sub_msg_queue.pop();
             
-            auto meta = msg->Get(String::New("meta"))->ToObject();
-            auto topic = String::Utf8Value(meta->Get(String::New("topic"))->ToString());
-            if(_js_callback->IsEmpty()) continue;
+            if(obj->_js_callback.IsEmpty()) continue;
             
             const unsigned argc = 1;
             Local<Value> argv[argc] = { msg };
             
-            Local<Function>::New(isolate, _js_callback)->Call(isolate->GetCurrentContext()->Global(), argc, argv);
+            auto global_isolate = isolate->GetCurrentContext()->Global();
+            Local<Function>::New(isolate, obj->_js_callback)->Call(global_isolate, argc, argv);
         }
     }
 }
 
-void NodeJSDayliteNode::generic_sub(const bson &msg, void *arg)
+void NodeJSDayliteNode::generic_sub(const daylite::bson &msg, void *arg)
 {
     NodeJSDayliteNode* obj = static_cast<NodeJSDayliteNode *>(arg);
 
     // enqueue it
+    auto o = obj->process_bson(msg);
     {
         std::lock_guard<std::mutex> lock(obj->_sub_msg_queue_mutex);
-        obj->_sub_msg_queue.push(process_bson(msg));
+        obj->_sub_msg_queue.push(o);
     }
     
     // notify the Node.js event loop that there is work to do
     uv_async_send(&obj->_sub_async);
 }
 
-v8::Local<v8::Object> NodeJSDayliteNode::process_bson(const bson &msg) const
+v8::Local<v8::Object> NodeJSDayliteNode::process_bson(const daylite::bson &msg) const
 {
-  auto ret = v8::Object::New();
+  Isolate *isolate = Isolate::GetCurrent();
+  auto ret = v8::Object::New(isolate);
   bson_iter_t iter;
-  bson_iter_init (&iter, doc);
+  bson_iter_init (&iter, msg);
   while(bson_iter_next(&iter))
   {
-    auto key = v8::String::New(bson_iter_key(&iter));
+    auto key = v8::String::NewFromUtf8(isolate, bson_iter_key(&iter));
     v8::Local<v8::Value> value;
-    if(BSON_ITER_HOLDS_DOUBLE(&iter)) value = v8::Number::New(bson_iter_double(&iter));
-    else if(BSON_ITER_HOLDS_INT32(&iter)) value = v8::Integer::New(bson_iter_int32(&iter));
-    else if(BSON_ITER_HOLDS_INT64(&iter)) value = v8::Integer::New(bson_iter_int64(&iter));
-    else if(BSON_ITER_HOLDS_BOOL(&iter)) value = v8::Boolean::New(bson_iter_bool(&iter));
+    if(BSON_ITER_HOLDS_DOUBLE(&iter)) value = v8::Number::New(isolate, bson_iter_double(&iter));
+    else if(BSON_ITER_HOLDS_INT32(&iter)) value = v8::Integer::New(isolate, bson_iter_int32(&iter));
+    else if(BSON_ITER_HOLDS_INT64(&iter)) value = v8::Integer::New(isolate, bson_iter_int64(&iter));
+    else if(BSON_ITER_HOLDS_BOOL(&iter)) value = v8::Boolean::New(isolate, bson_iter_bool(&iter));
+    else if(BSON_ITER_HOLDS_UTF8(&iter))
+    {
+      uint32_t length = 0;
+      const char *const str = bson_iter_utf8(&iter, &length);
+      value = v8::String::NewFromUtf8(isolate, str, String::kNormalString, length);
+    }
     else if(BSON_ITER_HOLDS_BINARY(&iter))
     {
-      bson_value_t *const v = bson_iter_value(&it);
+      const bson_value_t *const v = bson_iter_value(&iter);
       const size_t len = v->value.v_binary.data_len;
       value = node::Buffer::New(isolate, len);
       copy(v->value.v_binary.data, v->value.v_binary.data + len, node::Buffer::Data(value));
     }
     else if(BSON_ITER_HOLDS_ARRAY(&iter) || BSON_ITER_HOLDS_DOCUMENT(&iter))
     {
-      bson_value_t *const v = bson_iter_value(&it);
+      const bson_value_t *const v = bson_iter_value(&iter);
       value = process_bson(bson_new_from_data(v->value.v_doc.data, v->value.v_doc.data_len));
     }
     else
@@ -245,11 +250,54 @@ v8::Local<v8::Object> NodeJSDayliteNode::process_bson(const bson &msg) const
     }
     ret->Set(key, value);
   }
+  return ret;
 }
 
-bson NodeJSDayliteNode::process_obj(const Local<Object> &obj) const
+daylite::bson NodeJSDayliteNode::process_obj(const Local<Object> &obj) const
 {
-  
+  daylite::bson ret(bson_new());
+  Local<Array> property_names = obj->GetOwnPropertyNames();
+  for(size_t i = 0; i < property_names->Length(); ++i)
+  {
+    Local<Value> key = property_names->Get(i);
+    Local<Value> value = obj->Get(key);
+    assert(key->IsString());
+    auto key_str = key->ToString();
+    auto key_data = *String::Utf8Value(key_str);
+    if(value->IsString())
+    {
+      auto val_str = value->ToString();
+      bson_append_utf8(ret, key_data, key_str->Length(), *String::Utf8Value(val_str), val_str->Length());
+    }
+    else if(value->IsBoolean())
+    {
+      bson_append_bool(ret, key_data, key_str->Length(), value->ToBoolean()->Value());
+    }
+    else if(value->IsNumber())
+    {
+      if(value->IsInt32())
+      {
+        auto i32 = value->ToInt32();
+        bson_append_int32(ret, key_data, key_str->Length(), i32->Value());
+        continue;
+      }
+      
+      auto i64 = value->ToInteger();
+      if(i64.IsEmpty())
+      {
+        bson_append_int64(ret, key_data, key_str->Length(), i64->Value());
+        continue;
+      }
+      
+      bson_append_double(ret, key_data, key_str->Length(), value->ToNumber()->Value());
+    }
+    else if(value->IsObject())
+    {
+      daylite::bson subdoc = process_obj(value->ToObject());
+      bson_append_document(ret, key_data, key_str->Length(), subdoc);
+    }
+  }
+  return ret;
 }
 
 void NodeJSDayliteNode::publish(const FunctionCallbackInfo<Value> &args)
@@ -267,15 +315,20 @@ void NodeJSDayliteNode::publish(const FunctionCallbackInfo<Value> &args)
       return;
     }
     
-    auto topic = String::Utf8Value(args[0].As<String>());
+    auto topic = *String::Utf8Value(args[0]);
     auto msg = args[0].As<Object>();
     
-    auto it = _publishers.find(topic);
-    if(it == _publishers.end())
+    auto it = obj->_publishers.find(topic);
+    shared_ptr<daylite::publisher> pub;
+    if(it == obj->_publishers.end())
     {
-      it = _publishers.insert({topic, obj->_node.advertise(topic)});
+      pub = obj->_node->advertise(topic);
+      obj->_publishers.insert({topic, pub});
     }
-    it->second->publish();
+    else pub = it->second;
+    
+    
+    pub->publish(obj->process_obj(msg));
     
     args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
