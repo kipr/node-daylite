@@ -28,6 +28,7 @@ void NodeJSDayliteNode::Init(Handle<Object> exports)
     NODE_SET_PROTOTYPE_METHOD(tpl, "stop", stop);
     
     NODE_SET_PROTOTYPE_METHOD(tpl, "publish", publish);
+    NODE_SET_PROTOTYPE_METHOD(tpl, "set_callback", set_callback);
     NODE_SET_PROTOTYPE_METHOD(tpl, "subscribe", subscribe);
 
     constructor.Reset(isolate, tpl->GetFunction());
@@ -138,6 +139,7 @@ bool NodeJSDayliteNode::stop()
         return true;
     }
     
+    cout << "Stopping daylite..." << endl;
     
     if(!_node->stop())
     {
@@ -185,11 +187,12 @@ void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
             // pop the message
             auto msg = obj->_sub_msg_queue.front();
             obj->_sub_msg_queue.pop();
+            auto o = obj->process_bson(msg);
             
             if(obj->_js_callback.IsEmpty()) continue;
             
             const unsigned argc = 1;
-            Local<Value> argv[argc] = { msg };
+            Local<Value> argv[argc] = { o };
             
             auto global_isolate = isolate->GetCurrentContext()->Global();
             Local<Function>::New(isolate, obj->_js_callback)->Call(global_isolate, argc, argv);
@@ -202,10 +205,9 @@ void NodeJSDayliteNode::generic_sub(const daylite::bson &msg, void *arg)
     NodeJSDayliteNode* obj = static_cast<NodeJSDayliteNode *>(arg);
 
     // enqueue it
-    auto o = obj->process_bson(msg);
     {
         std::lock_guard<std::mutex> lock(obj->_sub_msg_queue_mutex);
-        obj->_sub_msg_queue.push(o);
+        obj->_sub_msg_queue.push(msg);
     }
     
     // notify the Node.js event loop that there is work to do
@@ -333,7 +335,7 @@ void NodeJSDayliteNode::publish(const FunctionCallbackInfo<Value> &args)
     args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 
-void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
+void NodeJSDayliteNode::set_callback(const FunctionCallbackInfo<Value> &args)
 {
     Isolate *isolate = Isolate::GetCurrent();
     HandleScope scope(isolate);
@@ -364,6 +366,37 @@ void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
     }
     
     obj->_js_callback.Reset(isolate, args[0].As<Function>());
+    args.GetReturnValue().Set(Boolean::New(isolate, true));
+}
+
+void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
+{
+    Isolate *isolate = Isolate::GetCurrent();
+    HandleScope scope(isolate);
+    
+    NodeJSDayliteNode *const obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
+    
+    // args == 1 -> subscriber
+    if(args.Length() != 1)
+    {
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong number of arguments")));
+      return;
+    }
+
+    if(!args[0]->IsString())
+    {
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong arguments")));
+      return;
+    }
+    
+    auto str = std::string(*String::Utf8Value(args[0].As<String>()));
+    
+    if(obj->_subscribers.find(str) != obj->_subscribers.end()) return;
+    auto sub = obj->_node->subscribe(str, &NodeJSDayliteNode::generic_sub, obj);
+    sub->set_send_packed(true);
+    obj->_subscribers.insert({str, sub});
     args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 

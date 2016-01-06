@@ -50,15 +50,17 @@ class NodeJSDayliteNode : public node::ObjectWrap
         
         // received package queue
         // required as multiple daylite callbacks might result in fewer uv async callbacks
-        std::queue<v8::Local<v8::Object>> _sub_msg_queue;
+        std::queue<daylite::bson> _sub_msg_queue;
         mutable std::mutex _sub_msg_queue_mutex;
         
         static void publish(const v8::FunctionCallbackInfo<v8::Value> &args);
+        static void set_callback(const v8::FunctionCallbackInfo<v8::Value> &args);
         static void subscribe(const v8::FunctionCallbackInfo<v8::Value> &args);
         v8::Local<v8::Object> process_bson(const daylite::bson &msg) const;
         daylite::bson process_obj(const v8::Local<v8::Object> &obj) const;
         v8::Persistent<v8::Function> _js_callback;
         
+        std::unordered_map<std::string, std::shared_ptr<daylite::subscriber> > _subscribers;
         std::unordered_map<std::string, std::shared_ptr<daylite::publisher> > _publishers;
         
         // the daylite subscriber callback

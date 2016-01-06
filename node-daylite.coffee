@@ -9,8 +9,7 @@ class DayliteClient extends EventEmitter
 
   join_daylite: (port) =>
     @node.start()
-    @node.subscribe (msg) =>
-        console.log 'Got msg', msg
+    @node.set_callback (msg) =>
         @emit 'data', msg.meta.topic, msg.msg
 
   leave_daylite: =>
@@ -22,6 +21,7 @@ class DayliteClient extends EventEmitter
       @node.write topic, msg
 
   subscribe: (topic, cb) =>
+    @node.subscribe(topic)
     @on 'data', (t, msg) ->
       cb(msg) if t is topic
 
