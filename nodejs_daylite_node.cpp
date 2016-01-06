@@ -1,12 +1,8 @@
-
 #include <node_buffer.h>
 
 #include <daylite/spinner.hpp>
 
 #include "nodejs_daylite_node.hpp"
-
-#include <aurora/aurora_key.hpp>
-#include <aurora/aurora_mouse.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -16,22 +12,7 @@ namespace nodejs_daylite_node
 
 using namespace v8;
 using namespace std;
-using namespace aurora;
-
-namespace
-{
-    template<typename T>
-    inline bson_bind::option<T> safe_unbind(const bson_t *raw_msg)
-    {
-        using namespace bson_bind;
-        T ret;
-        // Exception checks are disabled on ARM Node/V8
-        ret = T::unbind(raw_msg);
-        return some(ret);
-    }
-}
-
-
+using namespace daylite;
 
 void NodeJSDayliteNode::Init(Handle<Object> exports)
 {
@@ -131,10 +112,7 @@ bool NodeJSDayliteNode::start(const char *ip, uint16_t port)
     Isolate *isolate = Isolate::GetCurrent();
     HandleScope scope(isolate);
     
-    if(_started)
-    {
-        return true;
-    }
+    if(_started) return true;
     
     uv_async_init(uv_default_loop(), &_sub_async, handle_incoming_packages);
     
@@ -146,10 +124,6 @@ bool NodeJSDayliteNode::start(const char *ip, uint16_t port)
     }
     _started = true;
 
-    _aurora_frame_sub = _node->subscribe("/aurora/frame", &daylite_subscriber_callback, this);
-    _aurora_mouse_pub = _node->advertise("/aurora/key");
-    _aurora_key_pub = _node->advertise("/aurora/mouse");
-    
     // start the spinner
     uv_queue_work(uv_default_loop(), &_spinner_baton, spinner_work, spinner_after);
     
@@ -183,9 +157,7 @@ bool NodeJSDayliteNode::stop()
 void NodeJSDayliteNode::spinner_work(uv_work_t *request)
 {
     daylite::spinner::spin_once();
-    
-    // sleep a bit after worker
-    usleep(1000);
+    usleep(1000U);
 }
 
 // called after spinner_worker_run finishes
@@ -215,46 +187,97 @@ void NodeJSDayliteNode::handle_incoming_packages(uv_async_t *handle)
             // pop the message
             auto msg = obj->_sub_msg_queue.front();
             obj->_sub_msg_queue.pop();
-        
-            // call the JavaScript callback
-            if(!obj->_js_subscriber_callback.IsEmpty())
-            {
-                auto fn = Local<Function>::New(isolate, obj->_js_subscriber_callback);
-                
-                auto image_data = node::Buffer::New(isolate, msg.data.size()).ToLocalChecked();
-                copy(msg.data.begin(), msg.data.end(), node::Buffer::Data(image_data));
-                
-                const unsigned argc = 4;
-                Local<Value> argv[argc] = {
-                    String::NewFromUtf8(isolate, msg.format.c_str()),
-                    Number::New(isolate, msg.width),
-                    Number::New(isolate, msg.height),
-                    image_data };
-                
-                fn->Call(isolate->GetCurrentContext()->Global(), argc, argv);
-            }
+            
+            auto meta = msg->Get(String::New("meta"))->ToObject();
+            auto topic = String::Utf8Value(meta->Get(String::New("topic"))->ToString());
+            if(_js_callback->IsEmpty()) continue;
+            
+            const unsigned argc = 1;
+            Local<Value> argv[argc] = { msg };
+            
+            Local<Function>::New(isolate, _js_callback)->Call(isolate->GetCurrentContext()->Global(), argc, argv);
         }
     }
 }
 
-void NodeJSDayliteNode::daylite_subscriber_callback(const bson_t *raw_msg, void *arg)
+void NodeJSDayliteNode::generic_sub(const bson &msg, void *arg)
 {
     NodeJSDayliteNode* obj = static_cast<NodeJSDayliteNode *>(arg);
-    
-    // unwrap the message
-    const auto msg_option = safe_unbind<aurora_frame>(raw_msg);
 
-    if(msg_option.some())
+    // enqueue it
     {
-        // enqueue it
-        {
-            std::lock_guard<std::mutex> lock(obj->_sub_msg_queue_mutex);
-            obj->_sub_msg_queue.push(msg_option.unwrap());
-        }
-        
-        // notify the Node.js event loop that there is work to do
-        uv_async_send(&obj->_sub_async);
+        std::lock_guard<std::mutex> lock(obj->_sub_msg_queue_mutex);
+        obj->_sub_msg_queue.push(process_bson(msg));
     }
+    
+    // notify the Node.js event loop that there is work to do
+    uv_async_send(&obj->_sub_async);
+}
+
+v8::Local<v8::Object> NodeJSDayliteNode::process_bson(const bson &msg) const
+{
+  auto ret = v8::Object::New();
+  bson_iter_t iter;
+  bson_iter_init (&iter, doc);
+  while(bson_iter_next(&iter))
+  {
+    auto key = v8::String::New(bson_iter_key(&iter));
+    v8::Local<v8::Value> value;
+    if(BSON_ITER_HOLDS_DOUBLE(&iter)) value = v8::Number::New(bson_iter_double(&iter));
+    else if(BSON_ITER_HOLDS_INT32(&iter)) value = v8::Integer::New(bson_iter_int32(&iter));
+    else if(BSON_ITER_HOLDS_INT64(&iter)) value = v8::Integer::New(bson_iter_int64(&iter));
+    else if(BSON_ITER_HOLDS_BOOL(&iter)) value = v8::Boolean::New(bson_iter_bool(&iter));
+    else if(BSON_ITER_HOLDS_BINARY(&iter))
+    {
+      bson_value_t *const v = bson_iter_value(&it);
+      const size_t len = v->value.v_binary.data_len;
+      value = node::Buffer::New(isolate, len);
+      copy(v->value.v_binary.data, v->value.v_binary.data + len, node::Buffer::Data(value));
+    }
+    else if(BSON_ITER_HOLDS_ARRAY(&iter) || BSON_ITER_HOLDS_DOCUMENT(&iter))
+    {
+      bson_value_t *const v = bson_iter_value(&it);
+      value = process_bson(bson_new_from_data(v->value.v_doc.data, v->value.v_doc.data_len));
+    }
+    else
+    {
+      cerr << "Value type not implemented" << endl;
+    }
+    ret->Set(key, value);
+  }
+}
+
+bson NodeJSDayliteNode::process_obj(const Local<Object> &obj) const
+{
+  
+}
+
+void NodeJSDayliteNode::publish(const FunctionCallbackInfo<Value> &args)
+{
+    Isolate *isolate = Isolate::GetCurrent();
+    HandleScope scope(isolate);
+    
+    NodeJSDayliteNode *const obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
+    
+    // args == 1 -> set callback
+    if(args.Length() != 2)
+    {
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong number of arguments")));
+      return;
+    }
+    
+    auto topic = String::Utf8Value(args[0].As<String>());
+    auto msg = args[0].As<Object>();
+    
+    auto it = _publishers.find(topic);
+    if(it == _publishers.end())
+    {
+      it = _publishers.insert({topic, obj->_node.advertise(topic)});
+    }
+    it->second->publish();
+    
+    args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 
 void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
@@ -262,164 +285,32 @@ void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
     Isolate *isolate = Isolate::GetCurrent();
     HandleScope scope(isolate);
     
-    NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
+    NodeJSDayliteNode *const obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
     
     // args == 0 -> reset callback
     if(args.Length() == 0)
     {
-        obj->_js_subscriber_callback.Reset();
-        args.GetReturnValue().Set(Boolean::New(isolate, true));
-        return;
+      obj->_js_callback.Reset();
+      args.GetReturnValue().Set(Boolean::New(isolate, true));
+      return;
     }
     
     // args == 1 -> set callback
     if(args.Length() != 1)
     {
-        isolate->ThrowException(Exception::TypeError(
-            String::NewFromUtf8(isolate, "Wrong number of arguments")));
-        return;
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong number of arguments")));
+      return;
     }
 
     if(!args[0]->IsFunction())
     {
-        isolate->ThrowException(Exception::TypeError(
-            String::NewFromUtf8(isolate, "Wrong arguments")));
-        return;
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong arguments")));
+      return;
     }
     
-    obj->_js_subscriber_callback.Reset(isolate, args[0].As<Function>());
-
-    args.GetReturnValue().Set(Boolean::New(isolate, true));
-}
-
-void NodeJSDayliteNode::publish_aurora_key(const FunctionCallbackInfo<Value> &args)
-{
-    Isolate* isolate = Isolate::GetCurrent();
-    HandleScope scope(isolate);
-  
-    if(args.Length() != 1)
-    {
-        isolate->ThrowException(Exception::TypeError(
-            String::NewFromUtf8(isolate, "Wrong number of arguments")));
-        return;
-    }
-
-    if(!args[0]->IsArray())
-    {
-        isolate->ThrowException(Exception::TypeError(
-            String::NewFromUtf8(isolate, "Wrong arguments")));
-        return;
-    }
-    auto msg_obj = Handle<Object>::Cast(args[0]);
-    
-    aurora_key daylite_msg;
-    
-    if(msg_obj->Has(String::NewFromUtf8(isolate, "key_pressed")))
-    {
-        auto key_pressed_obj = msg_obj->Get(String::NewFromUtf8(isolate, "key_pressed"));
-        if(!key_pressed_obj->IsArray())
-        {
-            isolate->ThrowException(Exception::TypeError(
-                String::NewFromUtf8(isolate, "Wrong arguments")));
-            return;
-        }
-        
-        auto key_pressed = Local<Array>::Cast(key_pressed_obj);
-        for (auto i = 0; i < key_pressed->Length(); ++i)
-        {
-            auto key_code = Local<Number>::Cast(key_pressed->Get(i));
-            daylite_msg.key_pressed.push_back(key_code->NumberValue());
-        }
-    }
-    
-    NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
-    obj->_aurora_key_pub->publish(daylite_msg.bind());
-    
-    args.GetReturnValue().Set(Boolean::New(isolate, true));
-}
-
-void NodeJSDayliteNode::publish_aurora_mouse(const FunctionCallbackInfo<Value> &args)
-{
-    Isolate* isolate = Isolate::GetCurrent();
-    HandleScope scope(isolate);
-  
-    if(args.Length() != 1)
-    {
-        isolate->ThrowException(Exception::TypeError(
-            String::NewFromUtf8(isolate, "Wrong number of arguments")));
-        return;
-    }
-
-    if(!args[0]->IsObject())
-    {
-        isolate->ThrowException(Exception::TypeError(
-            String::NewFromUtf8(isolate, "Wrong arguments")));
-        return;
-    }
-    auto msg_obj = Handle<Object>::Cast(args[0]);
-    
-    aurora_mouse daylite_msg;
-    
-    if(msg_obj->Has(String::NewFromUtf8(isolate, "pos_x")))
-    {
-        auto pos_x = msg_obj->Get(String::NewFromUtf8(isolate, "pos_x"));
-        if(!pos_x->IsNumber())
-        {
-            isolate->ThrowException(Exception::TypeError(
-                String::NewFromUtf8(isolate, "Wrong arguments")));
-            return;
-        }
-        daylite_msg.pos_x = pos_x->NumberValue();
-    }
-    if(msg_obj->Has(String::NewFromUtf8(isolate, "pos_y")))
-    {
-        auto pos_y = msg_obj->Get(String::NewFromUtf8(isolate, "pos_y"));
-        if(!pos_y->IsNumber())
-        {
-            isolate->ThrowException(Exception::TypeError(
-                String::NewFromUtf8(isolate, "Wrong arguments")));
-            return;
-        }
-        daylite_msg.pos_y = pos_y->NumberValue();
-    }
-    
-    if(msg_obj->Has(String::NewFromUtf8(isolate, "left_button_down")))
-    {
-        auto left_button_down = msg_obj->Get(String::NewFromUtf8(isolate, "left_button_down"));
-        if(!left_button_down->IsBoolean())
-        {
-            isolate->ThrowException(Exception::TypeError(
-                String::NewFromUtf8(isolate, "Wrong arguments")));
-            return;
-        }
-        daylite_msg.left_button_down = left_button_down->BooleanValue();
-    }
-    if(msg_obj->Has(String::NewFromUtf8(isolate, "middle_button_down")))
-    {
-        auto middle_button_down = msg_obj->Get(String::NewFromUtf8(isolate, "middle_button_down"));
-        if(!middle_button_down->IsBoolean())
-        {
-            isolate->ThrowException(Exception::TypeError(
-                String::NewFromUtf8(isolate, "Wrong arguments")));
-            return;
-        }
-        daylite_msg.middle_button_down = middle_button_down->BooleanValue();
-    }
-    if(msg_obj->Has(String::NewFromUtf8(isolate, "right_button_down")))
-    {
-        auto right_button_down = msg_obj->Get(String::NewFromUtf8(isolate, "right_button_down"));
-        if(!right_button_down->IsBoolean())
-        {
-            isolate->ThrowException(Exception::TypeError(
-                String::NewFromUtf8(isolate, "Wrong arguments")));
-            return;
-        }
-        daylite_msg.right_button_down = right_button_down->BooleanValue();
-    }
-    
-    NodeJSDayliteNode *obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
-    obj->_aurora_mouse_pub->publish(daylite_msg.bind());
-    
+    obj->_js_callback.Reset(isolate, args[0].As<Function>());
     args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 

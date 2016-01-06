@@ -8,20 +8,10 @@ class DayliteClient extends EventEmitter
     @node  = NodeDaylite.NodeJSDayliteNode()
 
   join_daylite: (port) =>
-  
     @node.start()
-    
-    @node.subscribe (format, length, width, image_data) =>
-        console.log 'Got frame', format, length, width
-        console.log image_data
-        
-        msg = 
-            format: format
-            length: length
-            width: width
-            data: image_data
-        
-        @emit 'data', '/aurora/frame', msg
+    @node.subscribe (msg) =>
+        console.log 'Got msg', msg
+        @emit 'data', msg.meta.topic, msg.msg
 
   leave_daylite: =>
     @node = null
@@ -29,14 +19,9 @@ class DayliteClient extends EventEmitter
 
   publish: (topic, msg) =>
     if @node?
-      doc =
-        topic: topic
-        msg: msg
-
-      # @client.write Bson.BSONPure.BSON.serialize(doc, false, true, true)
+      @node.write topic, msg
 
   subscribe: (topic, cb) =>
-
     @on 'data', (t, msg) ->
       cb(msg) if t is topic
 

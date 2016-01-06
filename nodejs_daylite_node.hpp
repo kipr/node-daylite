@@ -10,8 +10,9 @@
 #include <uv.h>
 
 #include <daylite/node.hpp>
+#include <daylite/bson.hpp>
 
-#include <aurora/aurora_frame.hpp>
+#include <unordered_map>
 
 namespace nodejs_daylite_node
 {
@@ -49,27 +50,18 @@ class NodeJSDayliteNode : public node::ObjectWrap
         
         // received package queue
         // required as multiple daylite callbacks might result in fewer uv async callbacks
-        std::queue<aurora::aurora_frame> _sub_msg_queue;
+        std::queue<v8::Local<v8::Object>> _sub_msg_queue;
         mutable std::mutex _sub_msg_queue_mutex;
         
-        // Stores the JavaScript callback
+        static void publish(const v8::FunctionCallbackInfo<v8::Value> &args);
         static void subscribe(const v8::FunctionCallbackInfo<v8::Value> &args);
-        v8::Persistent<v8::Function> _js_subscriber_callback;
+        v8::Local<v8::Object> process_bson(const daylite::bson &msg) const;
+        v8::Persistent<v8::Function> _js_callback;
+        
+        std::unordered_map<std::string, std::shared_ptr<daylite::publisher> > _publishers;
         
         // the daylite subscriber callback
-        static void daylite_subscriber_callback(const bson_t *raw_msg, void *arg);
-        
-        // TODO: make me generic!
-        
-        // libaurora
-        std::shared_ptr<daylite::subscriber> _aurora_frame_sub;
-        
-        static void publish_aurora_key(const v8::FunctionCallbackInfo<v8::Value> &args);
-        std::shared_ptr<daylite::publisher> _aurora_key_pub;
-        
-        static void publish_aurora_mouse(const v8::FunctionCallbackInfo<v8::Value> &args);
-        std::shared_ptr<daylite::publisher> _aurora_mouse_pub;
-        
+        static void generic_sub(const daylite::bson &msg, void *arg);
 };
 
 }
