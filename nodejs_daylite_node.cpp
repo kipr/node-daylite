@@ -238,7 +238,7 @@ v8::Local<v8::Object> NodeJSDayliteNode::process_bson(const daylite::bson &msg) 
     {
       const bson_value_t *const v = bson_iter_value(&iter);
       const size_t len = v->value.v_binary.data_len;
-      value = node::Buffer::New(isolate, len);
+      value = node::Buffer::New(isolate, len).ToLocalChecked();
       copy(v->value.v_binary.data, v->value.v_binary.data + len, node::Buffer::Data(value));
     }
     else if(BSON_ITER_HOLDS_ARRAY(&iter) || BSON_ITER_HOLDS_DOCUMENT(&iter))
