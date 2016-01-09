@@ -18,7 +18,7 @@ class DayliteClient extends EventEmitter
 
   publish: (topic, msg) =>
     if @node?
-      @node.write topic, msg
+      @node.publish topic, msg
 
   subscribe: (topic, cb) =>
     @node.subscribe(topic)

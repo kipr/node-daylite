@@ -318,7 +318,7 @@ void NodeJSDayliteNode::publish(const FunctionCallbackInfo<Value> &args)
     }
     
     auto topic = *String::Utf8Value(args[0]);
-    auto msg = args[0].As<Object>();
+    auto msg = args[1].As<Object>();
     
     auto it = obj->_publishers.find(topic);
     shared_ptr<daylite::publisher> pub;
