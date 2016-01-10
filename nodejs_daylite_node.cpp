@@ -30,6 +30,7 @@ void NodeJSDayliteNode::Init(Handle<Object> exports)
     NODE_SET_PROTOTYPE_METHOD(tpl, "publish", publish);
     NODE_SET_PROTOTYPE_METHOD(tpl, "set_callback", set_callback);
     NODE_SET_PROTOTYPE_METHOD(tpl, "subscribe", subscribe);
+    NODE_SET_PROTOTYPE_METHOD(tpl, "unsubscribe", unsubscribe);
 
     constructor.Reset(isolate, tpl->GetFunction());
     exports->Set(String::NewFromUtf8(isolate, "NodeJSDayliteNode"), tpl->GetFunction());
@@ -397,6 +398,40 @@ void NodeJSDayliteNode::subscribe(const FunctionCallbackInfo<Value> &args)
     auto sub = obj->_node->subscribe(str, &NodeJSDayliteNode::generic_sub, obj);
     sub->set_send_packed(true);
     obj->_subscribers.insert({str, sub});
+    args.GetReturnValue().Set(Boolean::New(isolate, true));
+}
+
+void NodeJSDayliteNode::unsubscribe(const FunctionCallbackInfo<Value> &args)
+{
+    Isolate *isolate = Isolate::GetCurrent();
+    HandleScope scope(isolate);
+    
+    NodeJSDayliteNode *const obj = ObjectWrap::Unwrap<NodeJSDayliteNode>(args.Holder());
+    
+    // args == 1 -> subscriber
+    if(args.Length() != 1)
+    {
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong number of arguments")));
+      return;
+    }
+
+    if(!args[0]->IsString())
+    {
+      isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate, "Wrong arguments")));
+      return;
+    }
+    
+    auto str = std::string(*String::Utf8Value(args[0].As<String>()));
+    auto it = obj->_subscribers.find(str);
+    if(it == obj->_subscribers.end())
+    {
+      args.GetReturnValue().Set(Boolean::New(isolate, false));
+      return;
+    }
+
+    obj->_subscribers.erase(it);
     args.GetReturnValue().Set(Boolean::New(isolate, true));
 }
 

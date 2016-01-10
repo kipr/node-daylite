@@ -25,5 +25,9 @@ class DayliteClient extends EventEmitter
     @on 'data', (t, msg) ->
       cb(msg) if t is topic
 
+  unsubscribe: (topic) =>
+    @node.unsubscribe(topic)
+
+
 module.exports =
   DayliteClient: DayliteClient
